@@ -812,14 +812,15 @@ input[type=range]::-webkit-slider-thumb{
         <div class="card-title-icon" style="background:rgba(59,130,246,.15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
         <span class="card-title-text">Порядок книг</span>
       </div>
-      <!-- Кнопка добавить ещё -->
       <label class="btn btn-glass btn-sm" style="cursor:pointer;margin:0">
         + Добавить ещё
         <input type="file" id="minput2" accept=".epub" multiple style="display:none"/>
       </label>
     </div>
-    <p style="font-size:11px;color:var(--text3);margin-bottom:12px">Перетащите для изменения порядка</p>
-    <ul id="mlist"></ul>
+    <div class="card-body">
+      <p style="font-size:11px;color:var(--text3);margin-bottom:12px">Перетащите для изменения порядка</p>
+      <ul id="mlist"></ul>
+    </div>
   </div>
 
   <!-- Параметры итоговой книги -->
@@ -835,6 +836,7 @@ input[type=range]::-webkit-slider-thumb{
         <label class="flabel">Имя файла <span style="color:var(--text3);font-size:10px;text-transform:none;letter-spacing:0">(можно изменить вручную)</span></label>
         <input type="text" id="mgfile" value="merged.epub"/>
       </div>
+    </div>
     </div>
   </div>
 
@@ -1079,22 +1081,31 @@ function b64ToArrayBuffer(b64){
 
 // Строим список элементов дропдауна (один раз)
 // Превью рендерятся лениво через IntersectionObserver
-const _previewObserver = new IntersectionObserver((entries)=>{
-  entries.forEach(entry=>{
-    if(!entry.isIntersecting) return;
-    const cvEl = entry.target;
-    const filename = cvEl.dataset.previewFile;
-    const text = cvEl.dataset.previewText;
-    if(filename && text && !cvEl.dataset.rendered){
-      cvEl.dataset.rendered = '1';
-      drawFontPreview(cvEl, filename, text);
-      _previewObserver.unobserve(cvEl);
-    }
+// Observer создаётся лениво с нужным root-элементом
+let _previewObserver = null;
+
+function getPreviewObserver(rootEl){
+  // Пересоздаём если root изменился
+  if(_previewObserver) _previewObserver.disconnect();
+  _previewObserver = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(!entry.isIntersecting) return;
+      const cvEl = entry.target;
+      const filename = cvEl.dataset.previewFile;
+      const text = cvEl.dataset.previewText;
+      if(filename && text && !cvEl.dataset.rendered){
+        cvEl.dataset.rendered = '1';
+        drawFontPreview(cvEl, filename, text);
+        _previewObserver.unobserve(cvEl);
+      }
+    });
+  }, {
+    root: rootEl,        // следим внутри конкретного скролл-контейнера
+    rootMargin: '200px', // с запасом
+    threshold: 0
   });
-}, {
-  rootMargin: '120px', // начинаем загрузку заранее
-  threshold: 0
-});
+  return _previewObserver;
+}
 
 function buildFontDropdown(){
   const container = document.getElementById('fddItems');
@@ -1105,6 +1116,12 @@ function buildFontDropdown(){
     const styles = FONT_DATA[fam]||[];
     const item = makeFddItem(fam, fam, styles, styles[0]?.file||null);
     container.appendChild(item);
+  }
+  // Предотвращаем всплытие touch-событий из списка на document
+  const listEl = document.getElementById('fddList');
+  if(listEl){
+    listEl.addEventListener('touchstart', e=>e.stopPropagation(), {passive:true});
+    listEl.addEventListener('touchmove',  e=>e.stopPropagation(), {passive:true});
   }
 }
 
@@ -1136,7 +1153,8 @@ function makeFddItem(fam, label, styles, previewFile){
   if(fam && previewFile){
     cvPreview.dataset.previewFile = previewFile;
     cvPreview.dataset.previewText = fam;
-    _previewObserver.observe(cvPreview);
+    // Observe будет вызван когда список откроется (в toggleFontDropdown)
+    cvPreview.dataset.pendingObserve = '1';
     // Рисуем заглушку сразу (пока не загрузится)
     const pctx0 = cvPreview.getContext('2d');
     const lw0 = cvPreview.width/(window.devicePixelRatio||1);
@@ -1155,10 +1173,9 @@ function makeFddItem(fam, label, styles, previewFile){
     pctx.textBaseline = 'middle';
     pctx.fillText('serif', 8, 36);
   }
-  // На мобильном используем touchend чтобы избежать задержки 300мс iOS
   div.addEventListener('touchend', e => {
-    e.preventDefault(); // отменяем последующий click
-    e.stopPropagation();
+    e.preventDefault();   // отменяем последующий click (убирает двойной вызов)
+    e.stopPropagation();  // не всплывает до document
     onFamilyChange(fam, div);
   });
   div.addEventListener('click', e => {
@@ -1290,6 +1307,13 @@ function toggleFontDropdown(){
     if(!isMobile){
       setTimeout(()=>document.getElementById('fddSearch').focus(), 50);
     }
+    // Запускаем observer для превью — теперь список виден
+    const listEl = document.getElementById('fddList');
+    const obs = getPreviewObserver(listEl);
+    listEl.querySelectorAll('[data-pending-observe="1"]').forEach(el=>{
+      el.dataset.pendingObserve='0';
+      obs.observe(el);
+    });
   }
 }
 function hideFontDropdown(){
@@ -1304,21 +1328,23 @@ function hideFontDropdown(){
   }
   document.getElementById('fddTrigger')?.classList.remove('open');
 }
-// Закрывать при клике/тапе вне дропдауна
-function _closeFddIfOutside(e){
-  if(_fddJustOpened) return;            // только что открыли — не закрывать
-  const list = document.getElementById('fddList');
-  if(_fddOpen && list && list.contains(e.target)) return;  // внутри списка
-  const wrap = document.getElementById('fontPickerWrap');
-  if(_fddOpen && wrap && wrap.contains(e.target)) return;  // внутри обёртки
-  if(_fddOpen) hideFontDropdown();
-}
-document.addEventListener('click', _closeFddIfOutside);
-document.addEventListener('touchstart', e=>{
+// Закрываем только по click (десктоп) и touchend (мобильный)
+// НЕ вешаем touchstart на document — это ломает скролл внутри списка
+document.addEventListener('click', e=>{
   if(_fddJustOpened) return;
-  const list=document.getElementById('fddList');
-  if(_fddOpen && list && list.contains(e.target)) return;
-  _closeFddIfOutside(e);
+  const list = document.getElementById('fddList');
+  const wrap = document.getElementById('fontPickerWrap');
+  if(_fddOpen && (list?.contains(e.target) || wrap?.contains(e.target))) return;
+  if(_fddOpen) hideFontDropdown();
+});
+
+// На мобильном закрываем по touchend вне списка (не touchstart!)
+document.addEventListener('touchend', e=>{
+  if(_fddJustOpened) return;
+  const list = document.getElementById('fddList');
+  const wrap = document.getElementById('fontPickerWrap');
+  if(_fddOpen && (list?.contains(e.target) || wrap?.contains(e.target))) return;
+  if(_fddOpen) hideFontDropdown();
 }, {passive:true});
 
 async function onFamilyChange(fam, clickedItem){
@@ -2460,6 +2486,11 @@ function buildMgFontDropdown(){
     const styles=FONT_DATA[fam]||[];
     makeFddItemFor(container,fam,fam,styles,styles[0]?.file||null,true);
   }
+  const mgList=document.getElementById('mg-fddList');
+  if(mgList){
+    mgList.addEventListener('touchstart', e=>e.stopPropagation(), {passive:true});
+    mgList.addEventListener('touchmove',  e=>e.stopPropagation(), {passive:true});
+  }
 }
 function makeFddItemFor(container,fam,label,styles,previewFile,isMg){
   const div=document.createElement('div');
@@ -2514,24 +2545,29 @@ function mgFilterFonts(q){
     i.style.display=(!q||i.dataset.fam.toLowerCase().includes(q))?'':'none';
   });
 }
-function _closeMgFddIfOutside(e){
-  if(_mgFddJustOpened) return;
+function hideMgFdd(){
+  _mgFddOpen=false;
   const mgList=document.getElementById('mg-fddList');
-  if(_mgFddOpen&&mgList&&mgList.contains(e.target)) return;
-  const wrap=document.getElementById('mg-fontPickerWrap');
-  if(_mgFddOpen&&wrap&&wrap.contains(e.target)) return;
-  if(_mgFddOpen){
-    _mgFddOpen=false;
-    mgList?.classList.remove('open');
-    document.getElementById('mg-fddTrigger')?.classList.remove('open');
+  if(mgList){
+    mgList.classList.remove('open');
+    mgList.style.position='';mgList.style.left='';mgList.style.right='';
+    mgList.style.top='';mgList.style.bottom='';mgList.style.maxHeight='';
   }
+  document.getElementById('mg-fddTrigger')?.classList.remove('open');
 }
-document.addEventListener('click', _closeMgFddIfOutside);
-document.addEventListener('touchstart', e=>{
+document.addEventListener('click', e=>{
   if(_mgFddJustOpened) return;
   const mgList=document.getElementById('mg-fddList');
-  if(_mgFddOpen&&mgList&&mgList.contains(e.target)) return;
-  _closeMgFddIfOutside(e);
+  const wrap=document.getElementById('mg-fontPickerWrap');
+  if(_mgFddOpen&&(mgList?.contains(e.target)||wrap?.contains(e.target))) return;
+  if(_mgFddOpen) hideMgFdd();
+});
+document.addEventListener('touchend', e=>{
+  if(_mgFddJustOpened) return;
+  const mgList=document.getElementById('mg-fddList');
+  const wrap=document.getElementById('mg-fontPickerWrap');
+  if(_mgFddOpen&&(mgList?.contains(e.target)||wrap?.contains(e.target))) return;
+  if(_mgFddOpen) hideMgFdd();
 }, {passive:true});
 
 // Вспомогательная — рисует pills для любого контейнера
