@@ -340,13 +340,14 @@ textarea::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius
 .fdd-list::-webkit-scrollbar{width:4px}
 .fdd-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:2px}
 
-/* Мобильный — fixed overlay */
+/* Мобильный — fixed overlay, позиция задаётся через JS */
 @media(max-width:580px){
   .fdd-list{
     position:fixed;
-    left:8px!important;right:8px!important;
+    left:8px;right:8px;
     max-height:min(360px,58vh);
     z-index:900;
+    /* top задаётся через JS — не перебиваем здесь */
   }
   .fdd-item{min-height:50px;padding:8px 12px;}
 }
@@ -1247,6 +1248,8 @@ function filterFonts(query){
 }
 
 // Открыть/закрыть дропдаун
+let _fddJustOpened = false; // защита от немедленного закрытия на touch
+
 function toggleFontDropdown(){
   const list = document.getElementById('fddList');
   const trigger = document.getElementById('fddTrigger');
@@ -1254,12 +1257,14 @@ function toggleFontDropdown(){
   list.classList.toggle('open', _fddOpen);
   trigger.classList.toggle('open', _fddOpen);
   if(_fddOpen){
-    // На мобильном — позиционируем под триггером через fixed
+    // Ставим флаг — следующий touchstart/click НЕ должен закрывать список
+    _fddJustOpened = true;
+    setTimeout(()=>{ _fddJustOpened = false; }, 300);
+    // На мобильном позиционируем через fixed
     if(window.innerWidth <= 580){
       const trigRect = trigger.getBoundingClientRect();
-      // Если места снизу мало — открываем вверх
       const spaceBelow = window.innerHeight - trigRect.bottom;
-      const listH = Math.min(320, window.innerHeight * 0.55);
+      const listH = Math.min(360, window.innerHeight * 0.58);
       if(spaceBelow < listH && trigRect.top > listH){
         list.style.top = (trigRect.top - listH - 4) + 'px';
       } else {
@@ -1268,7 +1273,10 @@ function toggleFontDropdown(){
     }
     document.getElementById('fddSearch').value = '';
     filterFonts('');
-    setTimeout(()=>document.getElementById('fddSearch').focus(),50);
+    // На мобильном не фокусируем — открывает клавиатуру
+    if(window.innerWidth > 580){
+      setTimeout(()=>document.getElementById('fddSearch').focus(), 50);
+    }
   }
 }
 function hideFontDropdown(){
@@ -1278,18 +1286,17 @@ function hideFontDropdown(){
 }
 // Закрывать при клике/тапе вне дропдауна
 function _closeFddIfOutside(e){
-  // Не закрываем если тап внутри списка (включая скролл)
+  if(_fddJustOpened) return;            // только что открыли — не закрывать
   const list = document.getElementById('fddList');
-  if(_fddOpen && list && list.contains(e.target)) return;
-  if(_fddOpen && !document.getElementById('fontPickerWrap')?.contains(e.target)){
-    hideFontDropdown();
-  }
+  if(_fddOpen && list && list.contains(e.target)) return;  // внутри списка
+  const wrap = document.getElementById('fontPickerWrap');
+  if(_fddOpen && wrap && wrap.contains(e.target)) return;  // внутри обёртки
+  if(_fddOpen) hideFontDropdown();
 }
 document.addEventListener('click', _closeFddIfOutside);
-// touchstart с passive:true — только для десктопа и случаев вне списка
 document.addEventListener('touchstart', e=>{
+  if(_fddJustOpened) return;
   const list=document.getElementById('fddList');
-  // Если тапаем внутри открытого списка — НЕ закрываем
   if(_fddOpen && list && list.contains(e.target)) return;
   _closeFddIfOutside(e);
 }, {passive:true});
@@ -2384,6 +2391,8 @@ function mgUpd(k,v){
 
 // Дропдаун шрифтов для обложки объединения — использует тот же FONT_DATA
 let _mgFddOpen=false;
+let _mgFddJustOpened = false;
+
 function mgToggleFontDd(){
   _mgFddOpen=!_mgFddOpen;
   const list=document.getElementById('mg-fddList');
@@ -2391,10 +2400,18 @@ function mgToggleFontDd(){
   list?.classList.toggle('open',_mgFddOpen);
   trigger?.classList.toggle('open',_mgFddOpen);
   if(_mgFddOpen){
-    // Копируем элементы из основного дропдауна если пустой
+    _mgFddJustOpened=true;
+    setTimeout(()=>{ _mgFddJustOpened=false; }, 300);
+    // Позиционирование на мобильном
+    if(window.innerWidth<=580&&list&&trigger){
+      const tr=trigger.getBoundingClientRect();
+      const lh=Math.min(360,window.innerHeight*0.58);
+      list.style.top=(window.innerHeight-tr.bottom>lh||tr.top<=lh)
+        ?(tr.bottom+4)+'px':(tr.top-lh-4)+'px';
+    }
     const mgItems=document.getElementById('mg-fddItems');
     if(mgItems&&!mgItems.children.length) buildMgFontDropdown();
-    document.getElementById('mg-fddSearch')?.focus();
+    if(window.innerWidth>580) document.getElementById('mg-fddSearch')?.focus();
   }
 }
 function buildMgFontDropdown(){
@@ -2460,9 +2477,12 @@ function mgFilterFonts(q){
   });
 }
 function _closeMgFddIfOutside(e){
+  if(_mgFddJustOpened) return;
   const mgList=document.getElementById('mg-fddList');
   if(_mgFddOpen&&mgList&&mgList.contains(e.target)) return;
-  if(_mgFddOpen&&!document.getElementById('mg-fontPickerWrap')?.contains(e.target)){
+  const wrap=document.getElementById('mg-fontPickerWrap');
+  if(_mgFddOpen&&wrap&&wrap.contains(e.target)) return;
+  if(_mgFddOpen){
     _mgFddOpen=false;
     mgList?.classList.remove('open');
     document.getElementById('mg-fddTrigger')?.classList.remove('open');
@@ -2470,6 +2490,7 @@ function _closeMgFddIfOutside(e){
 }
 document.addEventListener('click', _closeMgFddIfOutside);
 document.addEventListener('touchstart', e=>{
+  if(_mgFddJustOpened) return;
   const mgList=document.getElementById('mg-fddList');
   if(_mgFddOpen&&mgList&&mgList.contains(e.target)) return;
   _closeMgFddIfOutside(e);
