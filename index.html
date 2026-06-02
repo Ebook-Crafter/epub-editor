@@ -885,9 +885,18 @@ input[type=range]::-webkit-slider-thumb{
       <!-- Слои текста -->
       <div class="rpanel">
         <div class="rpanel-block">
-          <div class="rpanel-title">Текстовые слои</div>
+          <div class="rpanel-title" style="display:flex;justify-content:space-between;align-items:center">
+            Текстовые слои
+            <div class="history-bar">
+              <button class="hbtn" id="mg-btn-undo" onclick="mgHistUndo()" title="Отменить" disabled>↩</button>
+              <button class="hbtn" id="mg-btn-redo" onclick="mgHistRedo()" title="Повторить" disabled>↪</button>
+            </div>
+          </div>
           <div class="llist" id="mg-llist"><div class="llist-empty">Нажмите «+ Добавить»</div></div>
-          <button class="btn btn-purple btn-sm" style="width:100%;justify-content:center" onclick="mgAddLayer()">+ Добавить текст</button>
+          <div style="display:flex;gap:5px">
+            <button class="btn btn-purple btn-sm" style="flex:1;justify-content:center" onclick="mgAddLayer()">+ Текст</button>
+            <button class="btn btn-glass btn-sm" style="flex:1;justify-content:center" onclick="mgAddMask()" title="Добавить маску к выбранному тексту">🎭 Маска</button>
+          </div>
         </div>
         <div class="rpanel-block" id="mg-ppanel" style="display:none">
           <div class="rpanel-title">Свойства</div>
@@ -935,9 +944,40 @@ input[type=range]::-webkit-slider-thumb{
               <input type="number" id="mg-plineh" min="0.5" max="4" step="0.05" value="1.2" oninput="syncRange('mg-plineh','mg-plineh_r');mgUpd('lineH',+this.value)"/>
             </div>
           </div>
+          <div class="pg" style="margin-bottom:8px">
+            <div class="pg-label">Начертание</div>
+            <div class="style-toggles">
+              <button class="stog" id="mg-tbold"   onclick="mgTogStyle('bold')"   title="Жирный"><b>B</b></button>
+              <button class="stog" id="mg-tital"   onclick="mgTogStyle('italic')" title="Курсив"><i>I</i></button>
+              <button class="stog" id="mg-tstrike" onclick="mgTogStyle('strike')" title="Зачёркнутый"><s>S</s></button>
+            </div>
+          </div>
           <div class="hr"></div>
           <button class="btn btn-red btn-sm" style="width:100%;justify-content:center" onclick="mgDelSel()">🗑 Удалить слой</button>
         </div>
+
+        <!-- Панель маски объединения -->
+        <div class="rpanel-block" id="mg-mask-panel" style="display:none">
+          <div class="rpanel-title">🎭 Маска слоя</div>
+          <div class="mask-toolbar visible">
+            <div class="brush-size-row">
+              <span style="font-size:10px;color:var(--text3)">Кисть</span>
+              <input type="range" id="mg-brush-size" min="2" max="120" value="20" style="flex:1" oninput="mgUpdBrush()"/>
+              <div class="brush-preview" id="mg-brush-preview"></div>
+            </div>
+            <div class="color-toggle">
+              <div class="ctog ctog-w on" id="mg-brush-white" onclick="mgSetBrushColor('white')" title="Белый — восстановить"></div>
+              <div class="ctog ctog-b" id="mg-brush-black" onclick="mgSetBrushColor('black')" title="Чёрный — скрыть"></div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.8;margin-bottom:10px">
+            <div>⚪ <b style="color:var(--text2)">Белый</b> — восстанавливает текст</div>
+            <div>⚫ <b style="color:var(--text2)">Чёрный</b> — скрывает область</div>
+          </div>
+          <div class="hr"></div>
+          <button class="btn btn-red btn-sm" style="width:100%;justify-content:center" onclick="mgDelSel()">🗑 Удалить маску</button>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1997,7 +2037,7 @@ async function loadMergeFiles(files){
   if(!added){toast('Файлы уже добавлены','err');return;}
   renderML();
   updateMgMeta();
-  show('smord');show('smset');show('smcover');show('smbtn');
+  show('smord');show('smset');show('smcover');show('smbtn');setTimeout(mgInitHistory,100);
   toast(`Добавлено: ${added}. Всего: ${S.mg.files.length}`,'ok');
 }
 
@@ -2243,21 +2283,21 @@ function mgRenderLL(){
     </div>`).join('');
 }
 function mgFillProps(l){
-  document.getElementById('mg-ptxt').value=l.text;
-  document.getElementById('mg-psize').value=l.size;
-  document.getElementById('mg-psize_r').value=Math.min(l.size,300);
+  document.getElementById('mg-ptxt').value=l.text||'';
+  const sz=l.size||52, op=l.opacity??100, lh=l.lineH||1.2;
+  document.getElementById('mg-psize').value=sz;
+  document.getElementById('mg-psize_r').value=Math.min(sz,300);
   document.getElementById('mg-pcolor').value=l.color||'#ffffff';
   document.getElementById('mg-pshad').value=l.shadow||'soft';
-  document.getElementById('mg-popac').value=l.opacity??100;
-  document.getElementById('mg-popac_r').value=l.opacity??100;
-  const lh2=l.lineH||1.2;
-  document.getElementById('mg-plineh')?.setAttribute('value',lh2);
-  const mglhr=document.getElementById('mg-plineh_r');if(mglhr) mglhr.value=Math.min(lh2,4);
-  const mgln=document.getElementById('mg-plineh');if(mgln) mgln.value=lh2;
-  // Шрифт
+  document.getElementById('mg-popac').value=op;
+  document.getElementById('mg-popac_r').value=op;
+  document.getElementById('mg-plineh').value=lh;
+  document.getElementById('mg-plineh_r').value=Math.min(lh,4);
   const fddLabel=document.getElementById('mg-fddLabel');
   if(fddLabel) fddLabel.textContent=l.fontFamily||'— Без шрифта —';
-  renderStylePillsFor('mg-pstyles','mg-fddItems',l.fontFamily||'',l.fontFile||'',true);
+  document.getElementById('mg-tbold')?.classList.toggle('on',!!l.bold);
+  document.getElementById('mg-tital')?.classList.toggle('on',!!l.italic);
+  document.getElementById('mg-tstrike')?.classList.toggle('on',!!l.strike);
 }
 function mgUpd(k,v){
   const l=S.mg.layers.find(x=>x.id===S.mg.selId);if(!l) return;
@@ -2437,9 +2477,9 @@ async function execMerge(){
       const btoc=[];
       const ncxid=od.querySelector('spine')?.getAttribute('toc')||'';
       const ncxit=ncxid?od.querySelector(`manifest item[id="${ncxid}"]`):null;
-      if(ncxit){const nh=ncxit.getAttribute('href')||'',np=dir?`${dir}/${nh}`:nh;const nf=zip.file(np)||zip.file(nh);if(nf){try{const nd=new DOMParser().parseFromString(await nf.async('string'),'application/xml');nd.querySelectorAll('navMap > navPoint').forEach(np2=>{const lb=np2.querySelector('navLabel text')?.textContent||'';const src=np2.querySelector('content')?.getAttribute('src')||'';const sf2=src.split('#')[0],anc=src.includes('#')?'#'+src.split('#')[1]:'';const newH=hm[sf2];if(newH)btoc.push({label:lb,href:`../chapters/${newH.split('/').pop()}${anc}`});});}catch(e){}}}
-      if(!btoc.length)Object.entries(hm).forEach(([,nh])=>{if(nh.startsWith('chapters/'))btoc.push({label:nh.split('/').pop().replace('.xhtml',''),href:`../chapters/${nh.split('/').pop()}`});});
-      tc.push({label:meta.title||bk.name,href:btoc[0]?.href||'',children:btoc});
+      if(ncxit){const nh=ncxit.getAttribute('href')||'',np=dir?`${dir}/${nh}`:nh;const nf=zip.file(np)||zip.file(nh);if(nf){try{const nd=new DOMParser().parseFromString(await nf.async('string'),'application/xml');nd.querySelectorAll('navMap > navPoint').forEach(np2=>{const lb=np2.querySelector('navLabel text')?.textContent||'';const src=np2.querySelector('content')?.getAttribute('src')||'';const sf2=src.split('#')[0],anc=src.includes('#')?'#'+src.split('#')[1]:'';const newH=hm[sf2];if(newH)btoc.push({label:lb,href:`chapters/${newH.split('/').pop()}${anc}`});});}catch(e){}}}
+      if(!btoc.length)Object.entries(hm).forEach(([,nh])=>{if(nh.startsWith('chapters/'))btoc.push({label:nh.split('/').pop().replace('.xhtml',''),href:`chapters/${nh.split('/').pop()}`});});
+      tc.push({label:meta.title||bk.name,href:btoc[0]?.href||'',children:btoc,_bookTitle:meta.title||bk.name});
       document.getElementById('mpfill').style.width=Math.round((S.mg.files.indexOf(bk)+1)/S.mg.files.length*75)+'%';
     }
     oz.file('OEBPS/toc.ncx',bldNcx(T,tc));oz.file('OEBPS/nav.xhtml',bldNav(T,tc));
@@ -2460,9 +2500,36 @@ async function execMerge(){
   finally{setLd('mload','bmerge',false);stopPb('mpbar','mpfill');}
 }
 
-function bldOpf(T,A,mf,sp){const uid=(crypto.randomUUID?.())||Math.random().toString(36).slice(2);const items=Object.entries(mf).map(([id,it])=>`<item id="${esc(id)}" href="${esc(it.href)}" media-type="${esc(it.mediaType)}"${it.properties?` properties="${it.properties}"`:''}/>`).join('');const sins=sp.map(h=>{const id=Object.entries(mf).find(([,v])=>v.href===h)?.[0];return id?`<itemref idref="${esc(id)}"/>`:'';}).filter(Boolean).join('');return`<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookId"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="BookId">${uid}</dc:identifier><dc:title>${esc(T)}</dc:title><dc:creator>${esc(A)}</dc:creator><dc:language>ru</dc:language><meta property="dcterms:modified">2024-01-01T00:00:00Z</meta></metadata><manifest>${items}</manifest><spine toc="ncx">${sins}</spine></package>`;}
-function bldNcx(T,tc){let po=0;const pts=tc.map(s=>{po++;const ch=(s.children||[]).map(c=>{po++;return`<navPoint id="np${po}" playOrder="${po}"><navLabel><text>${esc(c.label)}</text></navLabel><content src="${esc(c.href)}"/></navPoint>`;}).join('');return`<navPoint id="np${po}" playOrder="${po}"><navLabel><text>${esc(s.label)}</text></navLabel><content src="${esc(s.href||s.children?.[0]?.href||'')}"/>${ch}</navPoint>`;}).join('');return`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd"><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="book-id"/></head><docTitle><text>${esc(T)}</text></docTitle><navMap>${pts}</navMap></ncx>`;}
-function bldNav(T,tc){const items=tc.map(s=>{const h=s.href||s.children?.[0]?.href||'';const ch=(s.children||[]).map(c=>`<li><a href="${esc(c.href)}">${esc(c.label)}</a></li>`).join('');return`<li><a href="${esc(h)}">${esc(s.label)}</a>${ch?`<ol>${ch}</ol>`:''}</li>`;}).join('');return`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><meta charset="utf-8"/><title>Оглавление</title></head><body><nav epub:type="toc"><h1>${esc(T)}</h1><ol>${items}</ol></nav></body></html>`;}
+function bldOpf(T,A,mf,sp){
+  const uid=(crypto.randomUUID?.())||Math.random().toString(36).slice(2);
+  const items=Object.entries(mf).map(([id,it])=>`<item id="${esc(id)}" href="${esc(it.href)}" media-type="${esc(it.mediaType)}"${it.properties?` properties="${it.properties}"`:''}/>` ).join('');
+  const sins=sp.map(h=>{const id=Object.entries(mf).find(([,v])=>v.href===h)?.[0];return id?`<itemref idref="${esc(id)}" linear="yes">`+'</itemref>':'';}).filter(Boolean).join('');
+  // Находим id nav-документа
+  const navId=Object.entries(mf).find(([,v])=>v.properties==='nav')?.[0]||'nav';
+  return `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="BookId" xml:lang="ru"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="BookId">${uid}</dc:identifier><dc:title>${esc(T)}</dc:title><dc:creator>${esc(A)}</dc:creator><dc:language>ru</dc:language><meta property="dcterms:modified">2024-01-01T00:00:00Z</meta></metadata><manifest>${items}</manifest><spine toc="ncx">${sins}</spine><guide><reference type="toc" title="Оглавление" href="${esc(mf[navId]?.href||'nav.xhtml')}"/></guide></package>`;
+}
+function bldNcx(T,tc){
+  let po=0;
+  // Двухуровневое: книга → главы
+  const pts=tc.map(s=>{
+    po++;
+    const topSrc=s.href||s.children?.[0]?.href||'';
+    const ch=(s.children||[]).map(c=>{
+      po++;
+      return `<navPoint id="np${po}" playOrder="${po}"><navLabel><text>${esc(c.label)}</text></navLabel><content src="${esc(c.href)}"/></navPoint>`;
+    }).join('');
+    return `<navPoint id="np${po}" playOrder="${po}"><navLabel><text>${esc(s._bookTitle||s.label)}</text></navLabel><content src="${esc(topSrc)}"/>${ch}</navPoint>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd"><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${T.replace(/[^a-zA-Z0-9]/g,'_')}"/><meta name="dtb:depth" content="2"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head><docTitle><text>${esc(T)}</text></docTitle><navMap>${pts}</navMap></ncx>`;
+}
+function bldNav(T,tc){
+  const items=tc.map(s=>{
+    const h=s.href||s.children?.[0]?.href||'';
+    const ch=(s.children||[]).map(c=>`<li><a href="${esc(c.href)}">${esc(c.label)}</a></li>`).join('');
+    return `<li><a href="${esc(h)}">${esc(s._bookTitle||s.label)}</a>${ch?`<ol>${ch}</ol>`:''}</li>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="ru"><head><meta charset="utf-8"/><title>Оглавление</title><style>nav ol{list-style:none;padding-left:1em}nav li{margin:.3em 0}nav a{color:inherit;text-decoration:none}</style></head><body><nav epub:type="toc" id="toc"><h1>${esc(T)}</h1><ol>${items}</ol></nav></body></html>`;
+}
 function resetMg(){
   S.mg.files=[];
   S.mg.rawImg=null; S.mg.croppedImg=null; S.mg.layers=[]; S.mg.selId=null;
@@ -2472,6 +2539,371 @@ function resetMg(){
   document.getElementById('minput2').value='';
   document.getElementById('mlist').innerHTML='';
   if(S.mg.ctx) S.mg.ctx.clearRect(0,0,S.mg.cvs?.width||0,S.mg.cvs?.height||0);
+}
+
+// ═══════════════════════════════════════════════
+// MG-РЕДАКТОР: история, маска, начертания
+// ═══════════════════════════════════════════════
+
+// История mg-редактора (отдельный стек)
+const MG_HIST=[]; let MG_HIST_IDX=-1;
+
+function mgHistSnapshot(){
+  const snap=S.mg.layers.map(l=>{
+    const cp={...l,otFont:null};
+    if(l.mask) cp.mask={...l.mask,maskCanvas:null,_data:l.mask.maskCanvas?.toDataURL()||null};
+    return cp;
+  });
+  MG_HIST.splice(MG_HIST_IDX+1);
+  MG_HIST.push(snap);
+  if(MG_HIST.length>30) MG_HIST.shift(); else MG_HIST_IDX++;
+  mgHistBtns();
+}
+
+function mgHistBtns(){
+  const u=document.getElementById('mg-btn-undo'),r=document.getElementById('mg-btn-redo');
+  if(u) u.disabled=(MG_HIST_IDX<=0);
+  if(r) r.disabled=(MG_HIST_IDX>=MG_HIST.length-1);
+}
+
+async function mgHistUndo(){
+  if(MG_HIST_IDX<=0) return;
+  MG_HIST_IDX--;
+  S.mg.layers=await mgDeserialize(MG_HIST[MG_HIST_IDX]);
+  S.mg.selId=null; hide('mg-ppanel'); hide('mg-mask-panel');
+  mgRenderLL(); mgRedraw(); mgHistBtns();
+}
+async function mgHistRedo(){
+  if(MG_HIST_IDX>=MG_HIST.length-1) return;
+  MG_HIST_IDX++;
+  S.mg.layers=await mgDeserialize(MG_HIST[MG_HIST_IDX]);
+  S.mg.selId=null; hide('mg-ppanel'); hide('mg-mask-panel');
+  mgRenderLL(); mgRedraw(); mgHistBtns();
+}
+async function mgDeserialize(snap){
+  return Promise.all(snap.map(async l=>{
+    const cp={...l};
+    if(l.mask&&l.mask._data){
+      const img=new Image(); await new Promise(res=>{img.onload=res;img.src=l.mask._data;});
+      const c2=S.mg.cvs; if(!c2) return cp;
+      const mc=document.createElement('canvas'); mc.width=c2.width; mc.height=c2.height;
+      mc.getContext('2d').drawImage(img,0,0,mc.width,mc.height);
+      cp.mask={...l.mask,maskCanvas:mc,_data:null};
+    }
+    if(l.fontFile&&FONT_CACHE[l.fontFile]) cp.otFont=FONT_CACHE[l.fontFile];
+    return cp;
+  }));
+}
+
+// Начертания для mg
+function mgTogStyle(s){
+  const l=S.mg.layers.find(x=>x.id===S.mg.selId);
+  if(!l||typeof S.mg.selId==='string') return;
+  l[s]=!l[s];
+  document.getElementById('mg-t'+{bold:'bold',italic:'ital',strike:'strike'}[s])?.classList.toggle('on',l[s]);
+  mgRedraw();
+  clearTimeout(S.mg._updTimer);
+  S.mg._updTimer=setTimeout(mgHistSnapshot,600);
+}
+
+// Маска для mg
+let mgBrushColor='white', mgBrushSize=20, mgMaskDrawing=false;
+
+function mgUpdBrush(){
+  mgBrushSize=+(document.getElementById('mg-brush-size')?.value||20);
+  const prev=document.getElementById('mg-brush-preview');
+  const sz=Math.max(8,Math.min(mgBrushSize,24));
+  if(prev){prev.style.width=sz+'px';prev.style.height=sz+'px';
+    prev.style.background=mgBrushColor==='white'?'#fff':'#111';}
+}
+function mgSetBrushColor(col){
+  mgBrushColor=col;
+  document.getElementById('mg-brush-white')?.classList.toggle('on',col==='white');
+  document.getElementById('mg-brush-black')?.classList.toggle('on',col==='black');
+  mgUpdBrush();
+}
+
+function mgIsMaskMode(){ return typeof S.mg.selId==='string'&&S.mg.selId.startsWith('mask:'); }
+function mgGetMaskTarget(){ if(!mgIsMaskMode()) return null; const tid=+S.mg.selId.split(':')[1]; return S.mg.layers.find(l=>l.id===tid)||null; }
+
+function mgAddMask(){
+  const l=S.mg.layers.find(x=>x.id===S.mg.selId);
+  if(!l){toast('Выберите текстовый слой','err');return;}
+  if(l.mask){toast('У этого слоя уже есть маска','err');return;}
+  const mc=document.createElement('canvas');
+  const c2=S.mg.cvs; if(!c2) return;
+  mc.width=c2.width; mc.height=c2.height;
+  mc.getContext('2d').fillStyle='rgba(255,255,255,1)';
+  mc.getContext('2d').fillRect(0,0,mc.width,mc.height);
+  l.mask={maskCanvas:mc};
+  S.mg.selId='mask:'+l.id;
+  mgRenderLL(); mgRedraw();
+  show('mg-mask-panel'); hide('mg-ppanel');
+  mgHistSnapshot();
+}
+
+function mgSelLayerFull(id){
+  S.mg.selId=id;
+  hide('mg-mask-panel');
+  const l=typeof id==='number'?S.mg.layers.find(x=>x.id===id):null;
+  if(l){mgFillProps(l);show('mg-ppanel');}
+  else hide('mg-ppanel');
+  mgRenderLL(); mgRedraw();
+}
+function mgSelMaskOf(lid){
+  S.mg.selId='mask:'+lid;
+  hide('mg-ppanel'); show('mg-mask-panel');
+  mgRenderLL(); mgRedraw();
+}
+
+function mgDelSel(){
+  if(mgIsMaskMode()){
+    const tid=+S.mg.selId.split(':')[1];
+    const l=S.mg.layers.find(x=>x.id===tid);
+    if(l) delete l.mask;
+    S.mg.selId=null; hide('mg-mask-panel');
+    mgRenderLL(); mgRedraw(); mgHistSnapshot(); return;
+  }
+  if(typeof S.mg.selId!=='number') return;
+  S.mg.layers=S.mg.layers.filter(l=>l.id!==S.mg.selId);
+  S.mg.selId=null; hide('mg-ppanel');
+  mgRenderLL(); mgRedraw(); mgHistSnapshot();
+}
+
+// Рендер с маской
+function mgRedraw(){
+  const c2=S.mg.cvs, c3=S.mg.ctx; if(!c2||!c3) return;
+  c3.clearRect(0,0,c2.width,c2.height);
+  const src=S.mg.croppedImg||S.mg.rawImg;
+  if(src){ c3.drawImage(src,0,0,c2.width,c2.height); }
+  else{
+    c3.fillStyle='#0a0a12';c3.fillRect(0,0,c2.width,c2.height);
+    c3.fillStyle='rgba(255,255,255,.12)';c3.font='11px Inter,sans-serif';
+    c3.textAlign='center';c3.textBaseline='middle';
+    c3.fillText('Загрузите изображение обложки',c2.width/2,c2.height/2);
+  }
+  S.mg.layers.forEach(l=>{
+    if(l.mask&&l.mask.maskCanvas){
+      const off=document.createElement('canvas'); off.width=c2.width; off.height=c2.height;
+      const octx=off.getContext('2d');
+      mgDrawLayerToCtx(octx,l);
+      octx.globalCompositeOperation='destination-in';
+      octx.drawImage(l.mask.maskCanvas,0,0,off.width,off.height);
+      c3.drawImage(off,0,0);
+      if(l.id===S.mg.selId) mgDrawHandles(l);
+      if(S.mg.selId==='mask:'+l.id) mgDrawMaskHint(l.mask.maskCanvas);
+    } else {
+      mgDrawLayerToCtx(c3,l);
+      if(l.id===S.mg.selId) mgDrawHandles(l);
+    }
+  });
+}
+
+function mgDrawLayerToCtx(tctx,l){
+  tctx.save();
+  tctx.translate(l.x,l.y); tctx.rotate(l.rot||0);
+  tctx.globalAlpha=(l.opacity||100)/100;
+  const font=getOtFont(l), sz=l.size||48;
+  const lhpx=sz*(l.lineH||1.2);
+  const lines=(l.text||'').split('\n');
+  const totalH=lhpx*lines.length;
+  const widths=lines.map(ln=>mW(tctx,font,ln,sz,l));
+  l._bw=Math.max(...widths,1); l._bh=totalH;
+  setShadow(tctx,l.shadow||'soft');
+  let cy=-totalH/2+sz*.82;
+  lines.forEach(ln=>{
+    const lw=mW(tctx,font,ln,sz,l), ox=-lw/2;
+    if(font){const p=font.getPath(ln,ox,cy,sz);p.fill=l.color||'#fff';p.draw(tctx);}
+    else{tctx.font=cssFontStr(l,sz);tctx.fillStyle=l.color||'#fff';tctx.textAlign='left';tctx.textBaseline='alphabetic';tctx.fillText(ln,ox,cy);}
+    if(l.strike){tctx.shadowColor='transparent';tctx.shadowBlur=0;tctx.fillStyle=l.color||'#fff';tctx.fillRect(ox,cy-sz*.3,lw,sz*.07);setShadow(tctx,l.shadow||'soft');}
+    cy+=lhpx;
+  });
+  tctx.shadowColor='transparent';tctx.shadowBlur=0;tctx.shadowOffsetX=0;tctx.shadowOffsetY=0;
+  tctx.restore();
+}
+
+function mgDrawHandles(l){
+  const c2=S.mg.cvs,c3=S.mg.ctx; if(!c2||!c3) return;
+  const bw=l._bw||50, bh=l._bh||50;
+  const hw=bw/2+12,hh=bh/2+10;
+  c3.save();
+  c3.translate(l.x,l.y); c3.rotate(l.rot||0); c3.globalAlpha=1;
+  c3.shadowColor='transparent';c3.shadowBlur=0;
+  c3.strokeStyle='rgba(255,255,255,.7)';c3.lineWidth=1.5;
+  c3.setLineDash([4,3]);c3.strokeRect(-hw,-hh,hw*2,hh*2);c3.setLineDash([]);
+  [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].forEach(([x,y])=>hdot(c3,x,y,'rgba(255,255,255,.9)'));
+  hdot(c3,0,-hh-22,'#0a84ff','⟳');
+  c3.restore();
+}
+
+function mgDrawMaskHint(mc){
+  const c3=S.mg.ctx,c2=S.mg.cvs; if(!c3||!c2) return;
+  c3.save();
+  const inv=document.createElement('canvas'); inv.width=mc.width; inv.height=mc.height;
+  const ictx=inv.getContext('2d');
+  ictx.fillStyle='rgba(200,50,50,0.55)'; ictx.fillRect(0,0,inv.width,inv.height);
+  ictx.globalCompositeOperation='destination-out'; ictx.drawImage(mc,0,0);
+  c3.drawImage(inv,0,0,c2.width,c2.height);
+  c3.strokeStyle='rgba(191,90,242,.8)';c3.lineWidth=1.5;
+  c3.setLineDash([4,3]);c3.strokeRect(2,2,c2.width-4,c2.height-4);c3.setLineDash([]);
+  c3.restore();
+}
+
+// renderLL для mg — с маской
+function mgRenderLL(){
+  const el=document.getElementById('mg-llist'); if(!el) return;
+  if(!S.mg.layers.length){el.innerHTML='<div class="llist-empty">Нажмите «+ Добавить»</div>';return;}
+  const rows=[];
+  [...S.mg.layers].reverse().forEach(l=>{
+    const isSel=(S.mg.selId===l.id);
+    const isMaskSel=(S.mg.selId==='mask:'+l.id);
+    rows.push(`<div class="litem${isSel?' sel':''}" onclick="mgSelLayerFull(${l.id})">
+      <span style="font-size:10px;opacity:.5;margin-right:4px">T</span>
+      <span class="litem-label">${eh(l.text||'(пусто)')}</span>
+      <span class="litem-del" onclick="event.stopPropagation();mgDeleteLayer(${l.id})">✕</span>
+    </div>`);
+    if(l.mask) rows.push(`<div class="litem${isMaskSel?' sel':''}" style="margin-left:18px" onclick="mgSelMaskOf(${l.id})">
+      <span style="font-size:10px;margin-right:4px">🎭</span>
+      <span class="litem-label" style="color:var(--tint3)">Маска</span>
+      <span class="litem-del" onclick="event.stopPropagation();mgDelMaskOf(${l.id})">✕</span>
+    </div>`);
+  });
+  el.innerHTML=rows.join('');
+}
+function mgDeleteLayer(id){
+  S.mg.layers=S.mg.layers.filter(l=>l.id!==id);
+  if(S.mg.selId===id||S.mg.selId==='mask:'+id){S.mg.selId=null;hide('mg-ppanel');hide('mg-mask-panel');}
+  mgRenderLL(); mgRedraw(); mgHistSnapshot();
+}
+function mgDelMaskOf(lid){
+  const l=S.mg.layers.find(x=>x.id===lid); if(l) delete l.mask;
+  if(S.mg.selId==='mask:'+lid){S.mg.selId=null;hide('mg-mask-panel');}
+  mgRenderLL(); mgRedraw(); mgHistSnapshot();
+}
+
+// mg canvas events
+const mgCvs2=document.getElementById('mg-cvs');
+if(mgCvs2){
+  let mgDrag=null;
+  function mgCxy(e){const r=mgCvs2.getBoundingClientRect();const sx=(S.mg.cvs?.width||1)/r.width,sy=(S.mg.cvs?.height||1)/r.height;return{x:(e.clientX-r.left)*sx,y:(e.clientY-r.top)*sy};}
+
+  function mgMaskPaint(e){
+    const ml=mgGetMaskTarget(); if(!ml||!ml.mask) return;
+    const{x,y}=mgCxy(e);
+    const mc=ml.mask.maskCanvas; const mctx=mc.getContext('2d');
+    const scx=mc.width/(S.mg.cvs?.width||1);
+    mctx.globalCompositeOperation=mgBrushColor==='black'?'destination-out':'source-over';
+    mctx.fillStyle=mgBrushColor==='black'?'rgba(0,0,0,1)':'rgba(255,255,255,1)';
+    mctx.beginPath(); mctx.arc(x*scx,y*scx,(mgBrushSize*scx)/2,0,Math.PI*2); mctx.fill();
+    mctx.globalCompositeOperation='source-over';
+    mgRedraw();
+  }
+
+  mgCvs2.addEventListener('mousedown',e=>{
+    if(mgIsMaskMode()){mgMaskDrawing2=true;mgMaskPaint(e);return;}
+    // drag
+    const{x,y}=mgCxy(e);
+    for(let i=S.mg.layers.length-1;i>=0;i--){
+      const l=S.mg.layers[i];
+      if(hitL(l,x,y)){mgSelLayerFull(l.id);mgDrag={l,ox:x-l.x,oy:y-l.y};return;}
+    }
+    mgSelLayerFull(null);
+  });
+  let mgMaskDrawing2=false;
+  mgCvs2.addEventListener('mousemove',e=>{
+    if(mgMaskDrawing2&&mgIsMaskMode()){mgMaskPaint(e);return;}
+    if(!mgDrag) return;
+    const{x,y}=mgCxy(e); mgDrag.l.x=x-mgDrag.ox; mgDrag.l.y=y-mgDrag.oy; mgRedraw();
+  });
+  mgCvs2.addEventListener('mouseup',()=>{
+    if(mgMaskDrawing2){mgMaskDrawing2=false;mgHistSnapshot();return;}
+    if(mgDrag){mgDrag=null;mgHistSnapshot();}
+  });
+  mgCvs2.addEventListener('mouseleave',()=>{
+    if(mgMaskDrawing2){mgMaskDrawing2=false;mgHistSnapshot();return;}
+    mgDrag=null;
+  });
+  mgCvs2.addEventListener('dblclick',e=>{
+    const{x,y}=mgCxy(e);
+    for(let i=S.mg.layers.length-1;i>=0;i--){
+      if(hitL(S.mg.layers[i],x,y)){
+        mgSelLayerFull(S.mg.layers[i].id);
+        const t=prompt('Изменить текст:',S.mg.layers[i].text);
+        if(t!==null){S.mg.layers[i].text=t;mgRenderLL();mgRedraw();mgHistSnapshot();}
+        return;
+      }
+    }
+  });
+  // Touch
+  mgCvs2.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];mgCvs2.dispatchEvent(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY}));},{passive:false});
+  mgCvs2.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];mgCvs2.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY}));},{passive:false});
+  mgCvs2.addEventListener('touchend',()=>mgCvs2.dispatchEvent(new MouseEvent('mouseup')));
+}
+
+// Обновляем mgUpd с историей
+const _origMgUpd=mgUpd;
+function mgUpd(k,v){
+  const l=S.mg.layers.find(x=>x.id===S.mg.selId); if(!l) return;
+  l[k]=v; mgRedraw();
+  clearTimeout(S.mg._updTimer);
+  S.mg._updTimer=setTimeout(mgHistSnapshot,600);
+}
+
+// Обновляем mgAddLayer — используем новый selLayer
+const _origMgAdd=mgAddLayer;
+function mgAddLayer(){
+  const c2=S.mg.cvs;
+  const l={id:++_mgLid,text:'Текст',x:c2?c2.width/2:200,y:c2?c2.height*.85:300,
+    size:c2?Math.round(c2.height*.08):50,color:'#ffffff',fontFamily:'',fontFile:'',otFont:null,
+    align:'center',shadow:'soft',opacity:100,lineH:1.2,rot:0,bold:false,italic:false,strike:false,
+    _bw:null,_bh:null};
+  S.mg.layers.push(l);
+  mgSelLayerFull(l.id); mgRenderLL(); mgRedraw();
+  mgHistSnapshot();
+}
+
+// Инициализируем историю mg при первом показе
+function mgInitHistory(){
+  MG_HIST.length=0; MG_HIST_IDX=-1;
+  mgHistSnapshot(); mgHistBtns();
+}
+
+// mgRenderFinal с маской
+async function mgRenderFinal(){
+  const src=S.mg.croppedImg||S.mg.rawImg;
+  if(!src&&!S.mg.layers.length) return null;
+  const c2=S.mg.cvs; if(!c2) return null;
+  const ow=src?src.width:c2.width, oh=src?src.height:c2.height;
+  const sc=ow/c2.width;
+  const fc=document.createElement('canvas'); fc.width=ow; fc.height=oh;
+  const fc2=fc.getContext('2d');
+  if(src) fc2.drawImage(src,0,0,ow,oh);
+  else{fc2.fillStyle='#0a0a12';fc2.fillRect(0,0,ow,oh);}
+  for(const l of S.mg.layers){
+    const off=document.createElement('canvas'); off.width=ow; off.height=oh;
+    const octx=off.getContext('2d');
+    octx.save(); octx.translate(l.x*sc,l.y*sc); octx.rotate(l.rot||0); octx.globalAlpha=(l.opacity||100)/100;
+    const font=getOtFont(l), sz=l.size*sc;
+    const lhpx=sz*(l.lineH||1.2);
+    const lines=(l.text||'').split('\n');
+    const totalH=lhpx*lines.length;
+    setShadow(octx,l.shadow||'soft');
+    let cy=-totalH/2+sz*.82;
+    lines.forEach(ln=>{
+      const lw=mW(octx,font,ln,sz,l), ox=-lw/2;
+      if(font){const p=font.getPath(ln,ox,cy,sz);p.fill=l.color||'#fff';p.draw(octx);}
+      else{octx.font=cssFontStr(l,sz);octx.fillStyle=l.color||'#fff';octx.textAlign='left';octx.textBaseline='alphabetic';octx.fillText(ln,ox,cy);}
+      if(l.strike){octx.shadowColor='transparent';octx.shadowBlur=0;octx.fillStyle=l.color||'#fff';octx.fillRect(ox,cy-sz*.3,lw,sz*.07);setShadow(octx,l.shadow||'soft');}
+      cy+=lhpx;
+    });
+    octx.restore();
+    if(l.mask&&l.mask.maskCanvas){
+      octx.globalCompositeOperation='destination-in';
+      octx.drawImage(l.mask.maskCanvas,0,0,ow,oh);
+    }
+    fc2.drawImage(off,0,0);
+  }
+  return new Promise(res=>fc.toBlob(res,'image/jpeg',.95));
 }
 
 // ═══════════════════════════════════════════════
