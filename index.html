@@ -478,6 +478,11 @@ input[type=range]::-webkit-slider-thumb{
 .hr{border:none;border-top:1px solid var(--sep);margin:10px 0}
 .hint{font-size:10px;color:var(--text3);margin-top:3px}
 
+/* ── Slider+Number combo ── */
+.slider-row{display:flex;align-items:center;gap:7px;}
+.slider-row input[type=range]{flex:1;margin:0;}
+.slider-row input[type=number]{width:58px;flex-shrink:0;padding:6px 7px;text-align:center;}
+
 /* ── Crop Modal ── */
 .mov{
   position:fixed;inset:0;z-index:1000;
@@ -661,38 +666,53 @@ input[type=range]::-webkit-slider-thumb{
           </div>
 
           <!-- Размер + цвет -->
-          <div class="pg2">
+          <div class="pg2" style="margin-bottom:10px">
             <div class="pg">
-              <div class="pg-label">Размер (px)</div>
-              <input type="number" id="psize" min="4" max="800" oninput="upd('size',+this.value)"/>
+              <div class="pg-label">Цвет текста</div>
+              <input type="color" id="pcolor" style="height:36px" oninput="upd('color',this.value)"/>
             </div>
             <div class="pg">
-              <div class="pg-label">Цвет</div>
-              <input type="color" id="pcolor" oninput="upd('color',this.value)"/>
-            </div>
-          </div>
-
-          <!-- Межстрочный + смещение -->
-          <div class="pg2">
-            <div class="pg">
-              <div class="pg-label">Межстрочный</div>
-              <input type="number" id="plineh" min="0.5" max="4" step="0.05" value="1.2" oninput="upd('lineH',+this.value)"/>
-            </div>
-            <div class="pg">
-              <div class="pg-label">Прозрачность %</div>
-              <input type="number" id="popac" min="0" max="100" value="100" oninput="upd('opacity',+this.value)"/>
+              <div class="pg-label">Тень / эффект</div>
+              <select id="pshad" onchange="upd('shadow',this.value)">
+                <option value="none">Нет</option>
+                <option value="soft" selected>Мягкая</option>
+                <option value="hard">Жёсткая</option>
+                <option value="glow">Свечение</option>
+              </select>
             </div>
           </div>
 
-          <!-- Тень -->
+          <!-- Размер -->
+          <div class="pg" style="margin-bottom:8px">
+            <div class="pg-label">Размер (px)</div>
+            <div class="slider-row">
+              <input type="range" id="psize_r" min="4" max="300" step="1" value="52"
+                oninput="syncNum('psize','psize_r');upd('size',+this.value)"/>
+              <input type="number" id="psize" min="4" max="800" value="52"
+                oninput="syncRange('psize','psize_r');upd('size',+this.value)"/>
+            </div>
+          </div>
+
+          <!-- Межстрочный -->
+          <div class="pg" style="margin-bottom:8px">
+            <div class="pg-label">Межстрочный интервал</div>
+            <div class="slider-row">
+              <input type="range" id="plineh_r" min="0.5" max="4" step="0.05" value="1.2"
+                oninput="syncNum('plineh','plineh_r');upd('lineH',+this.value)"/>
+              <input type="number" id="plineh" min="0.5" max="4" step="0.05" value="1.2"
+                oninput="syncRange('plineh','plineh_r');upd('lineH',+this.value)"/>
+            </div>
+          </div>
+
+          <!-- Прозрачность -->
           <div class="pg" style="margin-bottom:10px">
-            <div class="pg-label">Тень / эффект</div>
-            <select id="pshad" onchange="upd('shadow',this.value)">
-              <option value="none">Нет</option>
-              <option value="soft" selected>Мягкая</option>
-              <option value="hard">Жёсткая</option>
-              <option value="glow">Свечение</option>
-            </select>
+            <div class="pg-label">Прозрачность %</div>
+            <div class="slider-row">
+              <input type="range" id="popac_r" min="0" max="100" step="1" value="100"
+                oninput="syncNum('popac','popac_r');upd('opacity',+this.value)"/>
+              <input type="number" id="popac" min="0" max="100" value="100"
+                oninput="syncRange('popac','popac_r');upd('opacity',+this.value)"/>
+            </div>
           </div>
 
           <div class="hr"></div>
@@ -892,7 +912,7 @@ function makeFddItem(fam, label, styles, previewFile){
   } else {
     // Пункт "без шрифта" — рисуем системным
     const pctx = cvPreview.getContext('2d');
-    pctx.fillStyle = 'rgba(245,245,247,0.5)';
+    pctx.fillStyle = '#ffffff';
     pctx.font = 'italic 22px serif';
     pctx.textBaseline = 'middle';
     pctx.fillText('serif', 8, 36);
@@ -926,7 +946,9 @@ async function drawFontPreview(cvEl, filename, text){
   // Рисуем название шрифта его же начертанием
   const pctx = cvEl.getContext('2d');
   pctx.clearRect(0,0,cvEl.width,cvEl.height);
-  pctx.fillStyle = 'rgba(245,245,247,0.85)';
+  pctx.fillStyle = 'rgba(255,255,255,0.05)';
+  pctx.fillRect(0,0,cvEl.width,cvEl.height);
+  pctx.fillStyle = '#ffffff';
   // Подбираем размер чтобы текст влез
   let sz = 28;
   for(let tries=0; tries<5; tries++){
@@ -939,12 +961,14 @@ async function drawFontPreview(cvEl, filename, text){
   }
   sz = Math.max(12, Math.min(sz, 36));
   try{
-    font.draw(pctx, text, 8, sz + (cvEl.height - sz)/2 - 2, sz);
+    const prevPath = font.getPath(text, 8, sz + (cvEl.height - sz)/2 - 2, sz);
+    prevPath.fill = '#ffffff';
+    prevPath.draw(pctx);
     // Кэшируем как dataURL
     PREVIEW_CACHE[filename] = cvEl.toDataURL();
   }catch(e){
     // Запасной вариант если шрифт не поддерживает текст
-    pctx.fillStyle = 'rgba(245,245,247,0.4)';
+    pctx.fillStyle = 'rgba(255,255,255,0.5)';
     pctx.font = '13px monospace';
     pctx.textBaseline = 'middle';
     pctx.fillText(text, 8, cvEl.height/2);
@@ -1296,8 +1320,11 @@ function drawLayer(l,sel){
     if(l.align==='center') ox=-lw/2;
     else if(l.align==='right') ox=-lw;
     if(font){
+      // font.draw() игнорирует ctx.fillStyle — используем getPath + fill
       ctx.fillStyle=l.color||'#fff';
-      font.draw(ctx,ln,ox,cy,sz);
+      const path=font.getPath(ln,ox,cy,sz);
+      path.fill=l.color||'#fff';
+      path.draw(ctx);
     } else {
       let ff=sz+'px serif';
       if(l.bold&&l.italic) ff='bold italic '+ff;
@@ -1459,7 +1486,8 @@ function onMove(e){
     drag.l._bw=drag.bw0*r;
     drag.l.x=(drag.ow.x+x)/2;drag.l.y=(drag.ow.y+y)/2;
     const ps=document.getElementById('psize');
-    if(ps&&drag.l.id===S.selId) ps.value=drag.l.size;
+    const psr=document.getElementById('psize_r');
+    if(ps&&drag.l.id===S.selId){ ps.value=drag.l.size; if(psr) psr.value=Math.min(drag.l.size,300); }
   }
   redraw();
 }
@@ -1541,13 +1569,33 @@ function renderLL(){
     </div>`).join('');
 }
 
+// Синхронизация ползунка → поле и поле → ползунок
+function syncNum(numId, rangeId){
+  const r=document.getElementById(rangeId);
+  const n=document.getElementById(numId);
+  if(r&&n) n.value=r.value;
+}
+function syncRange(numId, rangeId){
+  const r=document.getElementById(rangeId);
+  const n=document.getElementById(numId);
+  if(r&&n){
+    const v=parseFloat(n.value);
+    const mn=parseFloat(r.min), mx=parseFloat(r.max);
+    r.value=Math.max(mn,Math.min(mx,v));
+  }
+}
+
 function fillProps(l){
   document.getElementById('ptxt').value=l.text;
-  document.getElementById('psize').value=l.size;
-  document.getElementById('pcolor').value=l.color;
-  document.getElementById('pshad').value=l.shadow;
-  document.getElementById('popac').value=l.opacity;
-  document.getElementById('plineh').value=l.lineH||1.2;
+  const sz=l.size||52, op=l.opacity??100, lh=l.lineH||1.2;
+  document.getElementById('psize').value=sz;
+  document.getElementById('psize_r').value=Math.min(sz,300);
+  document.getElementById('pcolor').value=l.color||'#ffffff';
+  document.getElementById('pshad').value=l.shadow||'soft';
+  document.getElementById('popac').value=op;
+  document.getElementById('popac_r').value=op;
+  document.getElementById('plineh').value=lh;
+  document.getElementById('plineh_r').value=Math.min(lh,4);
   // Обновляем label кастомного дропдауна
   const famLabel = l.fontFamily || '— Без шрифта —';
   const fddLabel = document.getElementById('fddLabel');
@@ -1652,7 +1700,12 @@ async function renderFinal(srcBitmap){
       const ln=lines[i],lw=widths[i];
       let ox=0;
       if(l.align==='center') ox=-lw/2;else if(l.align==='right') ox=-lw;
-      if(font){fc2.fillStyle=l.color||'#fff';font.draw(fc2,ln,ox,cy,sz);}
+      if(font){
+        fc2.fillStyle=l.color||'#fff';
+        const p2=font.getPath(ln,ox,cy,sz);
+        p2.fill=l.color||'#fff';
+        p2.draw(fc2);
+      }
       else{
         let ff=sz+'px serif';
         if(l.bold&&l.italic) ff='bold italic '+ff;
