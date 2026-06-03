@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <title>EPUB Editor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css"/>
@@ -43,8 +43,18 @@
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:14px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+/* Отключаем double-tap zoom и выделение на интерактивных элементах */
+button,select,input,.litem,.fdd-item,.fdd-trigger,.fstyle-btn,.stog,.ctog,.nav-pills button,.btn,.hbtn{
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none;
+}
+/* range-ползунки — разрешаем горизонтальный жест, без зума */
+input[type=range]{touch-action:none;}
 body{
   background:var(--bg);
+  -webkit-text-size-adjust:100%;
+  touch-action:manipulation;
   background-image:
     radial-gradient(ellipse 70% 55% at 15% 5%,  rgba(59,130,246,.10) 0%, transparent 65%),
     radial-gradient(ellipse 55% 45% at 85% 90%,  rgba(168,85,247,.08) 0%, transparent 60%),
@@ -270,8 +280,9 @@ textarea::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius
 #cropperImg{display:block;max-width:100%}
 #stage-canvas-wrap{display:flex;justify-content:center;width:100%}
 #cvs{display:block;max-width:100%;height:auto;cursor:default;touch-action:none;}
-/* Merge tab stage: same width constraints so it never overflows the screen */
-#mg-stage-cropper-wrap{width:100%;max-width:100%}
+/* Merge tab stage: точная копия главного редактора */
+#mg-stage-cropper-wrap{display:none;width:100%;max-width:100%}
+#mg-stage-cropper-wrap.active{display:block}
 #mg-cropperImg{display:block;max-width:100%;height:auto}
 #mg-stage-canvas-wrap{display:flex;justify-content:center;width:100%;max-width:100%}
 #mg-cvs{display:block;max-width:100%;height:auto;cursor:default;touch-action:none;}
@@ -1822,7 +1833,7 @@ function getHandles(l){
   const hw=l._bw/2+12,hh=l._bh/2+10;
   return[{lx:-hw,ly:-hh,t:'sc',ci:0},{lx:hw,ly:-hh,t:'sc',ci:1},{lx:hw,ly:hh,t:'sc',ci:2},{lx:-hw,ly:hh,t:'sc',ci:3},{lx:0,ly:-hh-22,t:'rot'}];
 }
-function hitH(l,lx,ly){for(const h of getHandles(l))if(Math.hypot(lx-h.lx,ly-h.ly)<HR+5) return h;return null;}
+function hitH(l,lx,ly){for(const h of getHandles(l))if(Math.hypot(lx-h.lx,ly-h.ly)<HR+16) return h;return null;}
 function hitL(l,px,py){const{x:lx,y:ly}=toLoc(l,px,py);if(!l._bw) return false;return Math.abs(lx)<l._bw/2+14&&Math.abs(ly)<l._bh/2+12;}
 
 // Магнитная привязка — КРАЙ блока (не центр текста) к осям и краям
@@ -2264,7 +2275,7 @@ function mgEnterCrop(){
   tmp.getContext('2d').drawImage(S.mg.rawImg,0,0);
   const img=document.getElementById('mg-cropperImg');
   if(S.mg.cropInst){S.mg.cropInst.destroy();S.mg.cropInst=null;}
-  document.getElementById('mg-stage-cropper-wrap').style.display='block';
+  document.getElementById('mg-stage-cropper-wrap').classList.add('active');
   document.getElementById('mg-stage-canvas-wrap').style.display='none';
   hide('mg-bcrop'); show('mg-bapply'); show('mg-bcancel');
   img.onload=()=>{
@@ -2280,7 +2291,7 @@ async function mgApplyCrop(){
 }
 function mgExitCrop(){
   if(S.mg.cropInst){S.mg.cropInst.destroy();S.mg.cropInst=null;}
-  document.getElementById('mg-stage-cropper-wrap').style.display='none';
+  document.getElementById('mg-stage-cropper-wrap').classList.remove('active');
   document.getElementById('mg-stage-canvas-wrap').style.display='flex';
   show('mg-bcrop'); hide('mg-bapply'); hide('mg-bcancel');
   mgRedraw();
@@ -2348,42 +2359,78 @@ function mgDrawHandles(l,bw,bh){
   ctx.restore();
 }
 
-// Взаимодействие с canvas обложки объединения
+// Взаимодействие с canvas обложки объединения — полная копия логики редактора
 const mgCvs=document.getElementById('mg-cvs');
 if(mgCvs){
   let mgDrag=null;
   function mgCxy(e){const r=mgCvs.getBoundingClientRect();const sx=mgCvs.width/r.width,sy=mgCvs.height/r.height;return{x:(e.clientX-r.left)*sx,y:(e.clientY-r.top)*sy};}
-  mgCvs.addEventListener('mousedown',e=>{
+
+  function mgOnDown(e){
     const{x,y}=mgCxy(e);
     const sel=S.mg.layers.find(l=>l.id===S.mg.selId);
-    if(sel){const{x:lx,y:ly}=toLoc(sel,x,y);if(hitH(sel,lx,ly)){return;}}
+    if(sel){
+      const{x:lx,y:ly}=toLoc(sel,x,y);
+      const h=hitH(sel,lx,ly);
+      if(h){
+        if(h.t==='rot'){mgDrag={t:'rot',l:sel,a0:Math.atan2(y-sel.y,x-sel.x)-(sel.rot||0)};}
+        else{
+          const opp=[2,3,0,1][h.ci];
+          const oh=getHandles(sel)[opp];
+          const ow=toWorld(sel,oh.lx,oh.ly);
+          mgDrag={t:'sc',l:sel,ow,d0:Math.hypot(x-ow.x,y-ow.y),s0:sel.size,bw0:sel._bw||20};
+        }
+        return;
+      }
+    }
     for(let i=S.mg.layers.length-1;i>=0;i--){
-      if(hitL(S.mg.layers[i],x,y)){mgSelLayer(S.mg.layers[i].id);mgDrag={l:S.mg.layers[i],ox:x-S.mg.layers[i].x,oy:y-S.mg.layers[i].y};return;}
+      const l=S.mg.layers[i];
+      if(hitL(l,x,y)){mgSelLayer(l.id);mgDrag={t:'mv',l,ox:x-l.x,oy:y-l.y};return;}
     }
     mgSelLayer(null);
-  });
-  mgCvs.addEventListener('mousemove',e=>{
+  }
+
+  function mgOnMove(e){
     if(!mgDrag) return;
     const{x,y}=mgCxy(e);
-    mgDrag.l.x=x-mgDrag.ox; mgDrag.l.y=y-mgDrag.oy;
+    if(mgDrag.t==='mv'){
+      mgDrag.l.x=x-mgDrag.ox; mgDrag.l.y=y-mgDrag.oy;
+    } else if(mgDrag.t==='rot'){
+      mgDrag.l.rot=Math.atan2(y-mgDrag.l.y,x-mgDrag.l.x)-mgDrag.a0;
+    } else if(mgDrag.t==='sc'){
+      const dist=Math.hypot(x-mgDrag.ow.x,y-mgDrag.ow.y);
+      if(mgDrag.d0<1) return;
+      const r=dist/mgDrag.d0;
+      mgDrag.l.size=Math.max(4,Math.round(mgDrag.s0*r));
+      mgDrag.l._bw=mgDrag.bw0*r;
+      mgDrag.l.x=(mgDrag.ow.x+x)/2; mgDrag.l.y=(mgDrag.ow.y+y)/2;
+      const ps=document.getElementById('mg-psize');
+      const psr=document.getElementById('mg-psize_r');
+      if(ps&&mgDrag.l.id===S.mg.selId){ ps.value=mgDrag.l.size; if(psr) psr.value=Math.min(mgDrag.l.size,300); }
+    }
     mgRedraw();
-  });
-  mgCvs.addEventListener('mouseup',()=>{mgDrag=null;});
+  }
+
+  function mgOnUp(){ mgDrag=null; }
+
+  mgCvs.addEventListener('mousedown',mgOnDown);
+  mgCvs.addEventListener('mousemove',mgOnMove);
+  mgCvs.addEventListener('mouseup',mgOnUp);
+  mgCvs.addEventListener('mouseleave',mgOnUp);
   mgCvs.addEventListener('dblclick',e=>{
     const{x,y}=mgCxy(e);
     for(let i=S.mg.layers.length-1;i>=0;i--){
       if(hitL(S.mg.layers[i],x,y)){
         mgSelLayer(S.mg.layers[i].id);
         const t=prompt('Изменить текст:',S.mg.layers[i].text);
-        if(t!==null){S.mg.layers[i].text=t;document.getElementById('mg-ptxt').value=t;mgRenderLL();mgRedraw();}
+        if(t!==null){S.mg.layers[i].text=t;const el=document.getElementById('mg-ptxt');if(el)el.value=t;mgRenderLL();mgRedraw();}
         return;
       }
     }
   });
   // Touch
-  mgCvs.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];mgCvs.dispatchEvent(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY}));},{passive:false});
-  mgCvs.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];mgCvs.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY}));},{passive:false});
-  mgCvs.addEventListener('touchend',()=>mgCvs.dispatchEvent(new MouseEvent('mouseup')));
+  mgCvs.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0]||e.changedTouches[0];mgOnDown({clientX:t.clientX,clientY:t.clientY});},{passive:false});
+  mgCvs.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0]||e.changedTouches[0];mgOnMove({clientX:t.clientX,clientY:t.clientY});},{passive:false});
+  mgCvs.addEventListener('touchend',e=>{mgOnUp();},{passive:false});
 }
 
 function mgAddLayer(){
@@ -2463,7 +2510,13 @@ function mgToggleFontDd(){
 
     const mgItems=document.getElementById('mg-fddItems');
     if(mgItems&&!mgItems.children.length) buildMgFontDropdown();
-    document.getElementById('mg-fddSearch')?.focus();
+    // Запускаем ленивую загрузку превью — список теперь виден
+    const obs=getPreviewObserver(list);
+    list.querySelectorAll('[data-pending-observe="1"]').forEach(el=>{
+      el.dataset.pendingObserve='0';
+      obs.observe(el);
+    });
+    if(window.innerWidth>700) document.getElementById('mg-fddSearch')?.focus();
   }
 }
 function buildMgFontDropdown(){
@@ -2483,14 +2536,30 @@ function buildMgFontDropdown(){
 function makeFddItemFor(container,fam,label,styles,previewFile,isMg){
   const div=document.createElement('div');
   div.className='fdd-item'; div.dataset.fam=fam;
-  const cvP=document.createElement('canvas'); cvP.className='fdd-preview'; cvP.width=240; cvP.height=72;
+  const cvP=document.createElement('canvas'); cvP.className='fdd-preview';
+  const dpr=window.devicePixelRatio||1;
+  cvP.width=Math.round(240*dpr); cvP.height=Math.round(72*dpr);
+  cvP.style.width='120px'; cvP.style.height='36px';
   const meta=document.createElement('div'); meta.className='fdd-meta';
   const nd=document.createElement('div'); nd.className='fdd-name'; nd.textContent=label;
   const sd=document.createElement('div'); sd.className='fdd-styles'; sd.textContent=styles.length>1?styles.length+' начертаний':'';
   meta.appendChild(nd); meta.appendChild(sd);
   div.appendChild(cvP); div.appendChild(meta);
-  if(fam&&previewFile) drawFontPreview(cvP,previewFile,fam);
-  else{const p=cvP.getContext('2d');p.fillStyle='#ffffff';p.font='italic 22px serif';p.textBaseline='middle';p.fillText('serif',8,36);}
+  if(fam&&previewFile){
+    cvP.dataset.previewFile=previewFile;
+    cvP.dataset.previewText=fam;
+    cvP.dataset.pendingObserve='1';
+    // заглушка
+    const p0=cvP.getContext('2d');
+    p0.fillStyle='rgba(255,255,255,0.04)';p0.fillRect(0,0,cvP.width,cvP.height);
+    p0.fillStyle='rgba(255,255,255,0.2)';
+    p0.font=`${Math.round(11*dpr)}px monospace`;p0.textBaseline='middle';
+    p0.fillText(fam.substring(0,18),8*dpr,(cvP.height/2));
+  } else {
+    const p=cvP.getContext('2d');
+    p.fillStyle='rgba(255,255,255,0.5)';p.font=`italic ${Math.round(20*dpr)}px serif`;
+    p.textBaseline='middle';p.fillText('serif',8*dpr,cvP.height/2);
+  }
   const _handler = () => {
     if(isMg) onMgFamilyChange(fam,div);
     else onFamilyChange(fam,div);
