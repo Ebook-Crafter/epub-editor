@@ -124,7 +124,6 @@ main{padding:16px 20px 48px;max-width:1160px;margin:0 auto;}
   -webkit-backdrop-filter:blur(var(--blur)) saturate(160%);
   border:1px solid var(--border-light);
   border-top-color:rgba(255,255,255,.18);
-  overflow:hidden;
 }
 .card-title{
   display:flex;align-items:center;gap:10px;
@@ -271,7 +270,16 @@ textarea::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius
 #cropperImg{display:block;max-width:100%}
 #stage-canvas-wrap{display:flex;justify-content:center;width:100%}
 #cvs{display:block;max-width:100%;height:auto;cursor:default;touch-action:none;}
+/* Merge tab stage: same width constraints so it never overflows the screen */
+#mg-stage-cropper-wrap{width:100%;max-width:100%}
+#mg-cropperImg{display:block;max-width:100%;height:auto}
+#mg-stage-canvas-wrap{display:flex;justify-content:center;width:100%;max-width:100%}
+#mg-cvs{display:block;max-width:100%;height:auto;cursor:default;touch-action:none;}
 .stage-hint{font-size:10px;color:var(--text3);text-align:center;line-height:2}
+/* Cropper.js container must never exceed its stage wrap (prevents horizontal overflow) */
+#stage-cropper-wrap .cropper-container,
+#mg-stage-cropper-wrap .cropper-container{max-width:100%!important}
+#stage-cropper-wrap,#mg-stage-cropper-wrap{overflow:hidden}
 
 /* ── RIGHT PANEL ── */
 .rpanel{display:flex;flex-direction:column;gap:8px}
@@ -305,6 +313,8 @@ textarea::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius
 
 /* ── FONT PICKER ── */
 .font-picker{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;position:relative;}
+.rpanel-block{overflow:visible}
+.card-body{overflow:visible}
 .fdd-trigger{
   width:100%;padding:8px 12px;
   background:rgba(255,255,255,.05);
@@ -337,12 +347,16 @@ textarea::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius
   display:none;will-change:transform;
 }
 .fdd-list.open{display:block}
+/* Открытие вверх — когда внизу мало места (absolute, backdrop-filter не мешает) */
+.fdd-list.up{top:auto;bottom:calc(100% + 4px);}
 .fdd-list::-webkit-scrollbar{width:4px}
 .fdd-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:2px}
 
-/* Мобильный — увеличиваем tap-area, позиция через JS */
+/* Мобильный — ограничиваем высоту и увеличиваем tap-area */
 @media(max-width:580px){
+  .fdd-list{max-height:min(50vh,320px);}
   .fdd-item{min-height:50px;padding:8px 12px;}
+  .fdd-preview{width:96px;height:30px;}
 }
 
 .fdd-item{
@@ -771,6 +785,7 @@ input[type=range]::-webkit-slider-thumb{
 
       </div>
     </div>
+    </div>
   </div>
 
   <!-- Сохранение -->
@@ -975,6 +990,7 @@ input[type=range]::-webkit-slider-thumb{
 
       </div>
     </div>
+    </div>
   </div>
 
   <!-- Кнопка объединить -->
@@ -1173,11 +1189,6 @@ function makeFddItem(fam, label, styles, previewFile){
     pctx.textBaseline = 'middle';
     pctx.fillText('serif', 8, 36);
   }
-  div.addEventListener('touchend', e => {
-    e.preventDefault();   // отменяем последующий click (убирает двойной вызов)
-    e.stopPropagation();  // не всплывает до document
-    onFamilyChange(fam, div);
-  });
   div.addEventListener('click', e => {
     e.stopPropagation();
     onFamilyChange(fam, div);
@@ -1270,43 +1281,31 @@ function toggleFontDropdown(){
     _fddJustOpened = true;
     setTimeout(()=>{ _fddJustOpened = false; }, 300);
 
-    // Позиционирование: на любом экране вычисляем куда открыть
-    const isMobile = window.innerWidth <= 700;
-    if(isMobile){
-      // На мобильном: fixed, под триггером или над ним
+    // Сбрасываем inline-стили — позиционирование через CSS (absolute)
+    list.style.position = '';
+    list.style.left = '';
+    list.style.right = '';
+    list.style.top = '';
+    list.style.bottom = '';
+    list.style.width = '';
+    list.style.maxHeight = '';
+
+    // Определяем направление: если внизу мало места — открываем вверх
+    // (остаёмся в absolute — fixed ломается из-за backdrop-filter родителя)
+    list.classList.remove('up');
+    requestAnimationFrame(()=>{
       const tr = trigger.getBoundingClientRect();
-      const listH = Math.min(360, window.innerHeight * 0.55);
-      const spaceBelow = window.innerHeight - tr.bottom - 8;
-      list.style.position = 'fixed';
-      list.style.left = '8px';
-      list.style.right = '8px';
-      list.style.width = 'auto';
-      list.style.maxHeight = listH + 'px';
-      if(spaceBelow >= 120){
-        // Места снизу достаточно — открываем вниз
-        list.style.top = (tr.bottom + 4) + 'px';
-        list.style.bottom = 'auto';
-      } else {
-        // Открываем вверх
-        list.style.bottom = (window.innerHeight - tr.top + 4) + 'px';
-        list.style.top = 'auto';
+      const listH = list.offsetHeight || 290;
+      const spaceBelow = window.innerHeight - tr.bottom;
+      const spaceAbove = tr.top;
+      if(spaceBelow < listH + 16 && spaceAbove > spaceBelow){
+        list.classList.add('up');
       }
-    } else {
-      // Десктоп: absolute, через CSS
-      list.style.position = '';
-      list.style.left = '';
-      list.style.right = '';
-      list.style.top = '';
-      list.style.bottom = '';
-      list.style.width = '';
-      list.style.maxHeight = '';
-    }
+    });
 
     document.getElementById('fddSearch').value = '';
     filterFonts('');
-    if(!isMobile){
-      setTimeout(()=>document.getElementById('fddSearch').focus(), 50);
-    }
+    setTimeout(()=>document.getElementById('fddSearch').focus(), 50);
     // Запускаем observer для превью — теперь список виден
     const listEl = document.getElementById('fddList');
     const obs = getPreviewObserver(listEl);
@@ -1321,6 +1320,7 @@ function hideFontDropdown(){
   const list = document.getElementById('fddList');
   if(list){
     list.classList.remove('open');
+    list.classList.remove('up');
     // Сбрасываем inline-стили позиционирования
     list.style.position='';list.style.left='';list.style.right='';
     list.style.top='';list.style.bottom='';
@@ -1589,15 +1589,14 @@ function enterCropMode(){
   img.src='';
   img.onload=()=>{
     const r=parseFloat(document.getElementById('aratio').value);
-    // minContainerHeight = ширина canvas / ratio, чтобы кроппер не больше превью
-    const cw = document.getElementById('stage-canvas-wrap').offsetWidth || cvs.width || 400;
-    const ch = Math.round(cw / r);
     cropInst=new Cropper(img,{
       aspectRatio: r,
       viewMode: 1,
-      autoCropArea: 1.0,   // рамка = весь кадр по умолчанию (края совпадают с краями фото)
-      minContainerWidth: cw,
-      minContainerHeight: ch,
+      autoCropArea: 1.0,
+      dragMode: 'none',        // нельзя рисовать новую область — только двигать/тянуть точки
+      toggleDragModeOnDblclick: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
       responsive: true,
       background: false,
       checkCrossOrigin: false,
@@ -2270,9 +2269,7 @@ function mgEnterCrop(){
   hide('mg-bcrop'); show('mg-bapply'); show('mg-bcancel');
   img.onload=()=>{
     const r=parseFloat(document.getElementById('mg-aratio').value);
-    const mcw = document.getElementById('mg-stage-canvas-wrap')?.offsetWidth || S.mg.cvs?.width || 400;
-    const mch = Math.round(mcw / r);
-    S.mg.cropInst=new Cropper(img,{aspectRatio:r,viewMode:1,autoCropArea:1.0,minContainerWidth:mcw,minContainerHeight:mch,responsive:true,background:false,checkCrossOrigin:false});
+    S.mg.cropInst=new Cropper(img,{aspectRatio:r,viewMode:1,autoCropArea:1.0,dragMode:'none',toggleDragModeOnDblclick:false,cropBoxMovable:true,cropBoxResizable:true,responsive:true,background:false,checkCrossOrigin:false});
   };
   img.src=tmp.toDataURL('image/jpeg',.92);
 }
@@ -2449,33 +2446,24 @@ function mgToggleFontDd(){
     _mgFddJustOpened=true;
     setTimeout(()=>{ _mgFddJustOpened=false; }, 300);
 
-    const isMobile = window.innerWidth <= 700;
-    if(isMobile && list && trigger){
-      const tr=trigger.getBoundingClientRect();
-      const listH=Math.min(360,window.innerHeight*0.55);
-      const spaceBelow=window.innerHeight-tr.bottom-8;
-      list.style.position='fixed';
-      list.style.left='8px';
-      list.style.right='8px';
-      list.style.width='auto';
-      list.style.maxHeight=listH+'px';
-      if(spaceBelow>=120){
-        list.style.top=(tr.bottom+4)+'px';
-        list.style.bottom='auto';
-      } else {
-        list.style.bottom=(window.innerHeight-tr.top+4)+'px';
-        list.style.top='auto';
-      }
-    } else if(list){
+    // Сбрасываем inline-стили — позиционирование через CSS
+    if(list){
       list.style.position='';
       list.style.left='';list.style.right='';
       list.style.top='';list.style.bottom='';
       list.style.width='';list.style.maxHeight='';
+      list.classList.remove('up');
+      requestAnimationFrame(()=>{
+        const tr=trigger.getBoundingClientRect();
+        const lh=list.offsetHeight||290;
+        const below=window.innerHeight-tr.bottom;
+        if(below<lh+16 && tr.top>below) list.classList.add('up');
+      });
     }
 
     const mgItems=document.getElementById('mg-fddItems');
     if(mgItems&&!mgItems.children.length) buildMgFontDropdown();
-    if(!isMobile) document.getElementById('mg-fddSearch')?.focus();
+    document.getElementById('mg-fddSearch')?.focus();
   }
 }
 function buildMgFontDropdown(){
@@ -2507,8 +2495,7 @@ function makeFddItemFor(container,fam,label,styles,previewFile,isMg){
     if(isMg) onMgFamilyChange(fam,div);
     else onFamilyChange(fam,div);
   };
-  div.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); _handler(); });
-  div.addEventListener('click',    e => { e.stopPropagation(); _handler(); });
+  div.addEventListener('click', e => { e.stopPropagation(); _handler(); });
   container.appendChild(div);
   return div;
 }
@@ -2550,6 +2537,7 @@ function hideMgFdd(){
   const mgList=document.getElementById('mg-fddList');
   if(mgList){
     mgList.classList.remove('open');
+    mgList.classList.remove('up');
     mgList.style.position='';mgList.style.left='';mgList.style.right='';
     mgList.style.top='';mgList.style.bottom='';mgList.style.maxHeight='';
   }
